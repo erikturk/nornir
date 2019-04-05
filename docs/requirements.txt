@@ -1,11 +1,11 @@
-sphinx<1.6
+sphinx
 sphinx_rtd_theme
 sphinxcontrib-napoleon
 jupyter
 nbsphinx
--r ../requirements.txt
 future
 # jtextfsm
 jinja2
 # netaddr
 pyYAML
+toml

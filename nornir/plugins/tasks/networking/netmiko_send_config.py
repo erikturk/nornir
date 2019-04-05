@@ -19,9 +19,9 @@ def netmiko_send_config(
 
     Returns:
         Result object with the following attributes set:
-          * result (``dict``): dictionary showing the CLI from the configuration changes
+          * result (``str``): string showing the CLI from the configuration changes.
     """
-    net_connect = task.host.get_connection("netmiko")
+    net_connect = task.host.get_connection("netmiko", task.nornir.config)
     net_connect.enable()
     if config_commands:
         result = net_connect.send_config_set(config_commands=config_commands, **kwargs)

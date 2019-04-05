@@ -6,12 +6,13 @@ from nornir.plugins.tasks import networking
 THIS_DIR = os.path.dirname(os.path.realpath(__file__))
 
 
-def connect(task, connection_options):
+def connect(task, extras):
     if "napalm" in task.host.connections:
         task.host.close_connection("napalm")
     task.host.open_connection(
         "napalm",
-        connection_options={"optional_args": connection_options},
+        task.nornir.config,
+        extras={"optional_args": extras},
         default_to_host_attributes=True,
     )
 
@@ -20,7 +21,7 @@ class Test(object):
     def test_napalm_validate_src_ok(self, nornir):
         opt = {"path": THIS_DIR + "/mocked/napalm_get/test_napalm_getters"}
         d = nornir.filter(name="dev3.group_2")
-        d.run(connect, connection_options=opt)
+        d.run(connect, extras=opt)
         result = d.run(
             networking.napalm_validate, src=THIS_DIR + "/data/validate_ok.yaml"
         )
@@ -31,7 +32,7 @@ class Test(object):
     def test_napalm_validate_src_error(self, nornir):
         opt = {"path": THIS_DIR + "/mocked/napalm_get/test_napalm_getters"}
         d = nornir.filter(name="dev3.group_2")
-        d.run(connect, connection_options=opt)
+        d.run(connect, extras=opt)
 
         result = d.run(
             networking.napalm_validate, src=THIS_DIR + "/data/validate_error.yaml"
@@ -44,7 +45,7 @@ class Test(object):
     def test_napalm_validate_src_validate_source(self, nornir):
         opt = {"path": THIS_DIR + "/mocked/napalm_get/test_napalm_getters"}
         d = nornir.filter(name="dev3.group_2")
-        d.run(connect, connection_options=opt)
+        d.run(connect, extras=opt)
 
         validation_dict = [{"get_interfaces": {"Ethernet1": {"description": ""}}}]
 

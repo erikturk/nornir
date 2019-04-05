@@ -1,9 +1,10 @@
-import os
 import logging
+import os
 
+from nornir.core.task import Result
 from nornir.plugins.functions.text import print_result
 from nornir.plugins.functions.text import print_title
-from nornir.core.task import Result
+
 from tests.wrapper import wrap_cli_test
 
 output_dir = "{}/output_data".format(os.path.dirname(os.path.realpath(__file__)))
@@ -47,6 +48,9 @@ def parse_data(task):
         data["values"] = [10, 11, 12]
         data["changed"] = False
         data["failed"] = True
+
+    elif "dev5.no_group" == task.host.name:
+        data["values"] = [13, 14, 15]
 
     if data["failed"]:
         raise Exception("Unknown Error -> Contact your system administrator")
@@ -96,5 +100,6 @@ class Test(object):
 
     @wrap_cli_test(output="{}/failed_with_severity".format(output_dir))
     def test_print_failed_with_severity(self, nornir):
+        nornir.config.logging.configure()
         result = nornir.run(read_data)
         print_result(result, vars=["exception", "output"], severity_level=logging.ERROR)

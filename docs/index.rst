@@ -8,7 +8,7 @@ Welcome to nornir's documentation!
 
 Nornir is an automation framework written in python to be used with python. Most automation
 frameworks hide the language they are written in by using some cumbersome pseudo-language
-which usually is almost Turing complete but lacks tooling to debug and troubleshoot. Integrating
+which usually is almost Turing complete, but lacks tooling to debug and troubleshoot. Integrating
 with other systems is also usually quite hard as they usually have complex APIs if any at all.
 Some of the other common problems of those pseudo-languages is that are usually quite bad
 at dealing with data and re-usability is limited.
@@ -34,12 +34,12 @@ A first glance
 
 Here is an example on how to quickly build a runbook leveraging Nornir to retrieve information from the network::
 
-    from nornir.core import InitNornir
+    from nornir import InitNornir
     from nornir.plugins.functions.text import print_result
     from nornir.plugins.tasks.networking import napalm_get
 
     nr = InitNornir(
-        config_file="nornir.yaml", dry_run=True, num_workers=20
+        config_file="nornir.yaml", dry_run=True
     )
 
     results = nr.run(

@@ -3,35 +3,11 @@ import logging.config
 from multiprocessing.dummy import Pool
 
 from nornir.core.configuration import Config
+from nornir.core.inventory import Inventory
+from nornir.core.state import GlobalState
 from nornir.core.task import AggregatedResult, Task
-from nornir.plugins.connections import register_default_connection_plugins
 
-register_default_connection_plugins()
-
-
-class Data(object):
-    """
-    This class is just a placeholder to share data amongst different
-    versions of Nornir after running ``filter`` multiple times.
-
-    Attributes:
-        failed_hosts (list): Hosts that have failed to run a task properly
-    """
-
-    def __init__(self):
-        self.failed_hosts = set()
-
-    def recover_host(self, host):
-        """Remove ``host`` from list of failed hosts."""
-        self.failed_hosts.discard(host)
-
-    def reset_failed_hosts(self):
-        """Reset failed hosts and make all hosts available for future tasks."""
-        self.failed_hosts = set()
-
-    def to_dict(self):
-        """ Return a dictionary representing the object. """
-        return self.__dict__
+logger = logging.getLogger(__name__)
 
 
 class Nornir(object):
@@ -41,91 +17,31 @@ class Nornir(object):
 
     Arguments:
         inventory (:obj:`nornir.core.inventory.Inventory`): Inventory to work with
-        data(:obj:`nornir.core.Data`): shared data amongst different iterations of nornir
+        data(GlobalState): shared data amongst different iterations of nornir
         dry_run(``bool``): Whether if we are testing the changes or not
         config (:obj:`nornir.core.configuration.Config`): Configuration object
-        config_file (``str``): Path to Yaml configuration file
 
     Attributes:
         inventory (:obj:`nornir.core.inventory.Inventory`): Inventory to work with
-        data(:obj:`nornir.core.Data`): shared data amongst different iterations of nornir
+        data(:obj:`nornir.core.GlobalState`): shared data amongst different iterations of nornir
         dry_run(``bool``): Whether if we are testing the changes or not
         config (:obj:`nornir.core.configuration.Config`): Configuration parameters
     """
 
     def __init__(
-        self, inventory, dry_run, config=None, config_file=None, logger=None, data=None
-    ):
-        self.logger = logger or logging.getLogger("nornir")
+        self, inventory: Inventory, config: Config = None, data: GlobalState = None
+    ) -> None:
+        self.data = data if data is not None else GlobalState()
 
-        self.data = data or Data()
         self.inventory = inventory
-        self.inventory.nornir = self
-        self.data.dry_run = dry_run
 
-        if config_file:
-            self.config = Config(config_file=config_file)
-        else:
-            self.config = config or Config()
-
-        self.configure_logging()
+        self.config = config or Config()
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close_connections(on_good=True, on_failed=True)
-
-    @property
-    def dry_run(self):
-        return self.data.dry_run
-
-    def configure_logging(self):
-        dictConfig = self.config.logging_dictConfig or {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "formatters": {"simple": {"format": self.config.logging_format}},
-            "handlers": {},
-            "loggers": {},
-            "root": {
-                "level": "CRITICAL"
-                if self.config.logging_loggers
-                else self.config.logging_level.upper(),  # noqa
-                "handlers": [],
-                "formatter": "simple",
-            },
-        }
-        handlers_list = []
-        if self.config.logging_file:
-            dictConfig["root"]["handlers"].append("info_file_handler")
-            handlers_list.append("info_file_handler")
-            dictConfig["handlers"]["info_file_handler"] = {
-                "class": "logging.handlers.RotatingFileHandler",
-                "level": "NOTSET",
-                "formatter": "simple",
-                "filename": self.config.logging_file,
-                "maxBytes": 10485760,
-                "backupCount": 20,
-                "encoding": "utf8",
-            }
-        if self.config.logging_to_console:
-            dictConfig["root"]["handlers"].append("info_console")
-            handlers_list.append("info_console")
-            dictConfig["handlers"]["info_console"] = {
-                "class": "logging.StreamHandler",
-                "level": "NOTSET",
-                "formatter": "simple",
-                "stream": "ext://sys.stdout",
-            }
-
-        for logger in self.config.logging_loggers:
-            dictConfig["loggers"][logger] = {
-                "level": self.config.logging_level.upper(),
-                "handlers": handlers_list,
-            }
-
-        if dictConfig["root"]["handlers"]:
-            logging.config.dictConfig(dictConfig)
 
     def filter(self, *args, **kwargs):
         """
@@ -134,7 +50,7 @@ class Nornir(object):
         Returns:
             :obj:`Nornir`: A new object with same configuration as ``self`` but filtered inventory.
         """
-        b = Nornir(dry_run=self.dry_run, **self.__dict__)
+        b = Nornir(**self.__dict__)
         b.inventory = self.inventory.filter(*args, **kwargs)
         return b
 
@@ -166,7 +82,7 @@ class Nornir(object):
         raise_on_error=None,
         on_good=True,
         on_failed=False,
-        **kwargs
+        **kwargs,
     ):
         """
         Run task over all the hosts in the inventory.
@@ -182,12 +98,12 @@ class Nornir(object):
 
         Raises:
             :obj:`nornir.core.exceptions.NornirExecutionError`: if at least a task fails
-              and self.config.raise_on_error is set to ``True``
+              and self.config.core.raise_on_error is set to ``True``
 
         Returns:
             :obj:`nornir.core.task.AggregatedResult`: results of each execution
         """
-        num_workers = num_workers or self.config.num_workers
+        num_workers = num_workers or self.config.core.num_workers
 
         run_on = []
         if on_good:
@@ -199,12 +115,17 @@ class Nornir(object):
                 if name in self.data.failed_hosts:
                     run_on.append(host)
 
-        self.logger.info(
-            "Running task '{}' with num_workers: {}".format(
-                kwargs.get("name") or task.__name__, num_workers
+        num_hosts = len(self.inventory.hosts)
+        task_name = kwargs.get("name") or task.__name__
+        if num_hosts:
+            logger.info(
+                f"Running task %r with args %s on %d hosts",
+                task_name,
+                kwargs,
+                num_hosts,
             )
-        )
-        self.logger.debug(kwargs)
+        else:
+            logger.warning("Task %r has not been run – 0 hosts selected", task_name)
 
         if num_workers == 1:
             result = self._run_serial(task, run_on, **kwargs)
@@ -212,7 +133,9 @@ class Nornir(object):
             result = self._run_parallel(task, run_on, num_workers, **kwargs)
 
         raise_on_error = (
-            raise_on_error if raise_on_error is not None else self.config.raise_on_error
+            raise_on_error
+            if raise_on_error is not None
+            else self.config.core.raise_on_error
         )  # noqa
         if raise_on_error:
             result.raise_on_error()
@@ -220,9 +143,9 @@ class Nornir(object):
             self.data.failed_hosts.update(result.failed_hosts.keys())
         return result
 
-    def to_dict(self):
+    def dict(self):
         """ Return a dictionary representing the object. """
-        return {"data": self.data.to_dict(), "inventory": self.inventory.to_dict()}
+        return {"data": self.data.dict(), "inventory": self.inventory.dict()}
 
     def close_connections(self, on_good=True, on_failed=False):
         def close_connections_task(task):
@@ -230,23 +153,16 @@ class Nornir(object):
 
         self.run(task=close_connections_task, on_good=on_good, on_failed=on_failed)
 
+    @classmethod
+    def get_validators(cls):
+        yield cls.validate
 
-def InitNornir(config_file="", dry_run=False, **kwargs):
-    """
-    Arguments:
-        config_file(str): Path to the configuration file (optional)
-        dry_run(bool): Whether to simulate changes or not
-        **kwargs: Extra information to pass to the
-            :obj:`nornir.core.configuration.Config` object
+    @classmethod
+    def validate(cls, v):
+        if not isinstance(v, cls):
+            raise ValueError(f"Nornir: Nornir expected not {type(v)}")
+        return v
 
-    Returns:
-        :obj:`nornir.core.Nornir`: fully instantiated and configured
-    """
-    conf = Config(config_file=config_file, **kwargs)
-
-    inv_class = conf.inventory
-    inv_args = getattr(conf, inv_class.__name__, {})
-    transform_function = conf.transform_function
-    inv = inv_class(transform_function=transform_function, **inv_args)
-
-    return Nornir(inventory=inv, dry_run=dry_run, config=conf)
+    @property
+    def state(self):
+        return GlobalState
